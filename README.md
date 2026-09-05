@@ -34,23 +34,23 @@ The repository is an importable package named `@xd-dash/auth.net.im`.
     AuthInput
     AuthError
 
-@xd-dash/auth.net.im/github
+@xd-dash/auth.net.im/providers/github
     GitHubProvider
     GitHubEnv
     GitHubClaims
     middleware.auth()
 ```
 
-The conceptual public unit is GitHub authentication. Consumers do not need to know where the Hono adapter lives internally.
+Provider implementations are namespaced under `providers`. Consumers still get one public composition surface per provider and do not need to know where framework adapters live internally.
 
-A Hono Worker can use one GitHub import surface:
+A Hono Worker can use the GitHub provider surface:
 
 ```ts
 import { Hono } from "hono"
 import {
   middleware as github,
   type GitHubAuthEnv,
-} from "@xd-dash/auth.net.im/github"
+} from "@xd-dash/auth.net.im/providers/github"
 
 const app = new Hono<GitHubAuthEnv>()
 
@@ -66,7 +66,7 @@ The lower-level provider remains independently usable:
 import {
   GitHubProvider,
   type GitHubEnv,
-} from "@xd-dash/auth.net.im/github"
+} from "@xd-dash/auth.net.im/providers/github"
 
 const provider = new GitHubProvider()
 const identity = await provider.authenticate({ request, env })
@@ -95,7 +95,7 @@ POST /v1/auth/:provider
 Authorization: Bearer <provider assertion>
 ```
 
-The canonical `auth.net.im` Worker consumes the same `@xd-dash/auth.net.im/github` middleware composition surface used by downstream Workers.
+The canonical `auth.net.im` Worker consumes the same provider implementation and middleware composition used by downstream Workers.
 
 ## GitHub Actions OIDC
 
@@ -138,19 +138,19 @@ curl -fsS \
 
 ## Composition rule
 
-Provider-specific code belongs under `src/providers/<provider>/`. A provider exports the shared `AuthProvider` contract and its framework conveniences through the provider's public package surface. Framework adapter files may remain internal implementation details.
+Provider-specific code belongs under `src/providers/<provider>/` and is publicly addressed as `@xd-dash/auth.net.im/providers/<provider>`. A provider exports the shared `AuthProvider` contract and its framework conveniences through that provider surface. Framework adapter files may remain internal implementation details.
 
 ```text
 provider primitive
     ↓
 optional framework adapter
     ↓
-provider public surface
+providers/<provider> public surface
     ↓
 application composition
 ```
 
-Do not make downstream consumers understand internal directory layout merely to compose one provider.
+Do not make downstream consumers understand internal framework-adapter directory layout merely to compose one provider.
 
 Cloudflare is the runtime/deployment provider here, not the authentication authority. Hono is the HTTP primitive. GitHub is the identity provider. Huram remains exact qualification and infrastructure authority.
 
