@@ -23,11 +23,9 @@ composed auth providers
     ...
 ```
 
-Cloudflare is the runtime/deployment provider here, not the authentication authority. GitHub is currently the identity provider. When Cloudflare-specific operations are exposed through Smoke, they should likewise live in a modular Cloudflare provider rather than becoming Smoke-core branches.
-
 ## Reusable package surface
 
-The repository is also an importable package named `@xd-dash/auth.net.im` with explicit subpath exports:
+The repository is an importable package named `@xd-dash/auth.net.im`.
 
 ```text
 @xd-dash/auth.net.im/core
@@ -40,34 +38,43 @@ The repository is also an importable package named `@xd-dash/auth.net.im` with e
     GitHubProvider
     GitHubEnv
     GitHubClaims
-
-@xd-dash/auth.net.im/hono/github
-    githubAuth()
+    middleware.auth()
 ```
 
-The GitHub provider itself does not depend on Hono `Context`. It consumes the provider-neutral `Request + env` contract. The Hono adapter is a thin optional layer over that primitive.
+The conceptual public unit is GitHub authentication. Consumers do not need to know where the Hono adapter lives internally.
 
-A different Hono Worker can therefore compose the GitHub provider directly as middleware:
+A Hono Worker can use one GitHub import surface:
 
 ```ts
 import { Hono } from "hono"
 import {
-  githubAuth,
+  middleware as github,
   type GitHubAuthEnv,
-} from "@xd-dash/auth.net.im/hono/github"
+} from "@xd-dash/auth.net.im/github"
 
 const app = new Hono<GitHubAuthEnv>()
 
-app.use("/protected/*", githubAuth())
-
-app.get("/protected/me", c => {
-  return c.json(c.get("authIdentity"))
-})
+app.use("/protected/*", github.auth())
+app.get("/protected/me", c => c.json(c.get("authIdentity")))
 
 export default app
 ```
 
-For a Git dependency, a consuming project can point its dependency at an exact repository ref while retaining the package imports, for example:
+The lower-level provider remains independently usable:
+
+```ts
+import {
+  GitHubProvider,
+  type GitHubEnv,
+} from "@xd-dash/auth.net.im/github"
+
+const provider = new GitHubProvider()
+const identity = await provider.authenticate({ request, env })
+```
+
+`GitHubProvider` consumes the provider-neutral `Request + env` contract and does not depend on Hono `Context`. `middleware.auth()` is only a Hono adapter over that primitive.
+
+For a Git dependency, a consuming project can pin an exact repository ref:
 
 ```json
 {
@@ -88,15 +95,11 @@ POST /v1/auth/:provider
 Authorization: Bearer <provider assertion>
 ```
 
-The canonical `auth.net.im` Worker consumes the same exported `githubAuth()` middleware used by downstream Workers, so the reusable adapter is exercised by the application itself.
-
-The provider-neutral contract is defined in `src/auth/types.ts`. Provider composition is explicit in `src/providers/index.ts`. Architectural and maintenance invariants are recorded in `AUTH_IDIOMS.md`.
+The canonical `auth.net.im` Worker consumes the same `@xd-dash/auth.net.im/github` middleware composition surface used by downstream Workers.
 
 ## GitHub Actions OIDC
 
-The GitHub provider uses Hono's `hono/jwt` helper for JWT decoding and JWKS verification. Verification is restricted to `RS256`, requires GitHub's issuer and the configured audience, applies Hono's `exp`/`nbf`/`iat` checks, and then applies local repository/ref/workflow policy.
-
-The provider deliberately uses Hono's JWKS verifier rather than hand-maintaining RSA/JWK verification. The provider contract remains ours; JWT mechanics are delegated to Hono.
+The GitHub provider uses Hono's `hono/jwt` helper for JWT decoding and JWKS verification. Verification is restricted to `RS256`, requires GitHub's issuer and the configured audience, applies Hono's time-claim checks, and then applies local repository/ref/workflow policy.
 
 Required Worker vars:
 
@@ -133,46 +136,23 @@ curl -fsS \
   https://auth.net.im/v1/auth/github
 ```
 
-Successful responses use the same provider-neutral identity envelope regardless of provider:
-
-```json
-{
-  "authenticated": true,
-  "identity": {
-    "provider": "github",
-    "subject": "repo:xd-dash/huram-abi-master:ref:refs/heads/automation",
-    "attributes": {
-      "repository": "xd-dash/huram-abi-master",
-      "repository_owner": "xd-dash",
-      "ref": "refs/heads/automation",
-      "workflow_ref": "xd-dash/huram-abi-master/.github/workflows/example.yml@refs/heads/automation",
-      "run_id": "123456789",
-      "actor": "dash-xd"
-    }
-  }
-}
-```
-
 ## Composition rule
 
-Provider-specific code belongs under `src/providers/<provider>/`. A provider exports the shared `AuthProvider` contract and is registered in `src/providers/index.ts`. Reusable framework adapters belong under `src/<framework>/<provider>/`. Do not add provider-specific branching to the Hono host when the behavior can be expressed through a provider or adapter.
-
-Hono is a primitive of the HTTP host, not an auth provider. JWT is a helper used by providers that need JWT semantics. A future provider that does not use JWT should not be forced through JWT middleware.
-
-The same general rule applies when Smoke gains Cloudflare functionality:
+Provider-specific code belongs under `src/providers/<provider>/`. A provider exports the shared `AuthProvider` contract and its framework conveniences through the provider's public package surface. Framework adapter files may remain internal implementation details.
 
 ```text
-Smoke core
-    composition + stable provider contracts
-
-provider/cloudflare
-    Cloudflare API / Wrangler behavior
-
-Huram
-    exact smoke qualification + infrastructure authority
+provider primitive
+    ↓
+optional framework adapter
+    ↓
+provider public surface
+    ↓
+application composition
 ```
 
-The fact that Smoke grew out of Huram smoke tests should not turn Huram or Cloudflare into hidden special cases inside Smoke.
+Do not make downstream consumers understand internal directory layout merely to compose one provider.
+
+Cloudflare is the runtime/deployment provider here, not the authentication authority. Hono is the HTTP primitive. GitHub is the identity provider. Huram remains exact qualification and infrastructure authority.
 
 ## Local qualification
 
@@ -183,4 +163,4 @@ npm run check
 npm run dev
 ```
 
-`npm run check` runs TypeScript validation plus Wrangler's deploy dry-run path, matching the local Cloudflare Worker qualification boundary already used by Huram.
+`npm run check` runs TypeScript validation plus Wrangler's deploy dry-run path, matching the local Cloudflare Worker qualification boundary used by Huram.
