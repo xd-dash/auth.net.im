@@ -1,9 +1,8 @@
-import { githubAuth } from "../../hono/github"
+import { githubAuth, type GitHubAuthOptions } from "../../hono/github"
 import { GitHubProvider as GitHubProviderBase } from "./provider"
 
 export {
   authorizeGitHubClaims,
-  github,
 } from "./provider"
 
 export type {
@@ -18,6 +17,10 @@ export type {
   GitHubAuthVariables,
 } from "../../hono/github"
 
-export const GitHubProvider = Object.assign(GitHubProviderBase, {
-  middleware: githubAuth,
-})
+export class GitHubProvider extends GitHubProviderBase {
+  static middleware(options: GitHubAuthOptions = {}) {
+    return githubAuth(options)
+  }
+}
+
+export const github = new GitHubProvider()
