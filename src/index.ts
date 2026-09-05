@@ -2,9 +2,8 @@ import { Hono } from "hono"
 
 import { AuthError } from "./auth/error"
 import type { AuthFailure, AuthIdentity, AuthSuccess } from "./auth/types"
-import { githubAuth } from "./hono/github"
+import { middleware as githubMiddleware, type GitHubEnv } from "./providers/github"
 import { getProvider, providerNames } from "./providers"
-import type { GitHubEnv } from "./providers/github"
 
 export type Env = GitHubEnv
 
@@ -47,9 +46,7 @@ app.get("/healthz", c => c.json({ ok: true }))
 
 app.get("/v1/providers", c => c.json({ providers: providerNames() }))
 
-// The canonical Worker consumes the same reusable Hono adapter exported to
-// downstream Workers. This keeps the package surface exercised by the app.
-app.use("/v1/auth/github", githubAuth())
+app.use("/v1/auth/github", githubMiddleware.auth())
 app.post("/v1/auth/github", c => {
   const body: AuthSuccess = {
     authenticated: true,
@@ -58,8 +55,6 @@ app.post("/v1/auth/github", c => {
   return response(body)
 })
 
-// Future providers can use the provider-neutral primitive directly until they
-// gain an optional Hono adapter of their own.
 app.post("/v1/auth/:provider", async c => {
   const provider = getProvider(c.req.param("provider"))
   if (!provider) {
