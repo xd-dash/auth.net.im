@@ -4,8 +4,10 @@ import test from "node:test"
 import { Hono } from "hono"
 
 import type { AuthProvider } from "@xd-dash/auth.net.im/core"
-import type { GitHubEnv } from "@xd-dash/auth.net.im/github"
-import { githubAuth } from "@xd-dash/auth.net.im/hono/github"
+import {
+  middleware as github,
+  type GitHubEnv,
+} from "@xd-dash/auth.net.im/github"
 
 const provider: AuthProvider<GitHubEnv> = {
   name: "github",
@@ -20,7 +22,7 @@ const provider: AuthProvider<GitHubEnv> = {
   },
 }
 
-test("package subpath exports resolve and githubAuth exposes normalized identity", async () => {
+test("GitHub package surface exposes middleware.auth and normalized identity", async () => {
   const app = new Hono<{
     Bindings: GitHubEnv
     Variables: {
@@ -32,7 +34,7 @@ test("package subpath exports resolve and githubAuth exposes normalized identity
     }
   }>()
 
-  app.use("/protected/*", githubAuth({ provider }))
+  app.use("/protected/*", github.auth({ provider }))
   app.get("/protected/value", c => c.json(c.get("authIdentity")))
 
   const response = await app.request("https://example.test/protected/value", {}, {})
