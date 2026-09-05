@@ -190,10 +190,18 @@ export class GitHubProvider implements AuthProvider<GitHubEnv> {
 
     const fetcher = input.fetcher ?? fetch
     const key = await publicKey(header.kid, fetcher, now)
+
+    let signature: Uint8Array
+    try {
+      signature = base64UrlDecode(parts[2])
+    } catch {
+      throw new AuthError(403, "invalid_assertion", "GitHub OIDC assertion is malformed")
+    }
+
     const valid = await crypto.subtle.verify(
       "RSASSA-PKCS1-v1_5",
       key,
-      base64UrlDecode(parts[2]),
+      signature,
       encoder.encode(`${parts[0]}.${parts[1]}`),
     )
     if (!valid) {
