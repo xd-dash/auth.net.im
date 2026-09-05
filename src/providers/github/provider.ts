@@ -10,7 +10,9 @@ const GITHUB_JWKS = `${GITHUB_ISSUER}/.well-known/jwks`
 export type GitHubEnv = Record<string, string | undefined> & {
   GITHUB_AUDIENCE?: string
   GITHUB_OWNER?: string
+  GITHUB_OWNER_ID?: string
   GITHUB_REPOSITORIES?: string
+  GITHUB_REPOSITORY_IDS?: string
   GITHUB_REFS?: string
   GITHUB_WORKFLOW_PREFIX?: string
 }
@@ -22,12 +24,18 @@ export type GitHubClaims = {
   exp?: number
   nbf?: number
   iat?: number
+  jti?: string
   repository?: string
+  repository_id?: string
   repository_owner?: string
+  repository_owner_id?: string
   ref?: string
   workflow_ref?: string
+  workflow_sha?: string
   run_id?: string
+  run_attempt?: string
   actor?: string
+  actor_id?: string
 }
 
 export type GitHubJwk = JsonWebKey & {
@@ -68,6 +76,16 @@ export function authorizeGitHubClaims(claims: GitHubClaims, env: GitHubEnv): voi
     throw new AuthError(403, "repository_forbidden", "GitHub repository is not authorized")
   }
 
+  const ownerID = env.GITHUB_OWNER_ID?.trim()
+  if (ownerID && claims.repository_owner_id !== ownerID) {
+    throw new AuthError(403, "owner_id_forbidden", "GitHub repository owner id is not authorized")
+  }
+
+  const repositoryIDs = csv(env.GITHUB_REPOSITORY_IDS)
+  if (repositoryIDs.length > 0 && (!claims.repository_id || !repositoryIDs.includes(claims.repository_id))) {
+    throw new AuthError(403, "repository_id_forbidden", "GitHub repository id is not authorized")
+  }
+
   const refs = csv(env.GITHUB_REFS)
   if (refs.length > 0 && (!claims.ref || !refs.includes(claims.ref))) {
     throw new AuthError(403, "ref_forbidden", "GitHub ref is not authorized")
@@ -83,13 +101,19 @@ function normalizedIdentity(claims: GitHubClaims): AuthIdentity {
   const attributes: Record<string, string> = {}
   for (const [key, value] of Object.entries({
     repository: claims.repository,
+    repository_id: claims.repository_id,
     repository_owner: claims.repository_owner,
+    repository_owner_id: claims.repository_owner_id,
     ref: claims.ref,
     workflow_ref: claims.workflow_ref,
+    workflow_sha: claims.workflow_sha,
     run_id: claims.run_id,
+    run_attempt: claims.run_attempt,
     actor: claims.actor,
+    actor_id: claims.actor_id,
+    jti: claims.jti,
   })) {
-    if (value) attributes[key] = value
+    if (typeof value === "string" && value) attributes[key] = value
   }
 
   const subject = claims.sub || `repo:${claims.repository}:ref:${claims.ref ?? ""}`
@@ -101,7 +125,7 @@ export class GitHubProvider implements AuthProvider<GitHubEnv> {
   readonly #keys?: GitHubJwk[]
 
   constructor(options: GitHubProviderOptions = {}) {
-    this.#keys = options.keys
+    this.#keys = options.keys ? [...options.keys] : undefined
   }
 
   async authenticate(input: AuthInput<GitHubEnv>): Promise<AuthIdentity> {
@@ -140,5 +164,3 @@ export class GitHubProvider implements AuthProvider<GitHubEnv> {
     }
   }
 }
-
-export const github = new GitHubProvider()
