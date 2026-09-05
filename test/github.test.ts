@@ -5,11 +5,11 @@ import { AuthError } from "../src/auth/error"
 import { GitHubProvider, authorizeGitHubClaims, type GitHubEnv } from "../src/providers/github"
 
 const env: GitHubEnv = {
-  GITHUB_AUDIENCE: "auth.net.im",
-  GITHUB_OWNER: "xd-dash",
-  GITHUB_REPOSITORIES: "xd-dash/huram-abi-master",
-  GITHUB_REFS: "refs/heads/automation,refs/heads/worktree-automation",
-  GITHUB_WORKFLOW_PREFIX: "xd-dash/huram-abi-master/.github/workflows/",
+  GITHUB_AUDIENCE: "https://service.example",
+  GITHUB_OWNER: "example-org",
+  GITHUB_REPOSITORIES: "example-org/example-repo",
+  GITHUB_REFS: "refs/heads/main,refs/heads/release",
+  GITHUB_WORKFLOW_PREFIX: "example-org/example-repo/.github/workflows/",
 }
 
 function encode(value: unknown): string {
@@ -20,51 +20,51 @@ function assertAuthError(code: string) {
   return (error: unknown) => error instanceof AuthError && error.code === code
 }
 
-test("GitHub policy accepts the configured Huram execution rail", () => {
+test("GitHub policy accepts a configured workload", () => {
   assert.doesNotThrow(() => authorizeGitHubClaims({
-    repository: "xd-dash/huram-abi-master",
-    repository_owner: "xd-dash",
+    repository: "example-org/example-repo",
+    repository_owner: "example-org",
     run_id: "123",
-    ref: "refs/heads/automation",
-    workflow_ref: "xd-dash/huram-abi-master/.github/workflows/example.yml@refs/heads/automation",
+    ref: "refs/heads/main",
+    workflow_ref: "example-org/example-repo/.github/workflows/example.yml@refs/heads/main",
   }, env))
 })
 
-test("GitHub policy rejects a different ref", () => {
+test("GitHub policy rejects an unconfigured ref", () => {
   assert.throws(() => authorizeGitHubClaims({
-    repository: "xd-dash/huram-abi-master",
-    repository_owner: "xd-dash",
+    repository: "example-org/example-repo",
+    repository_owner: "example-org",
     run_id: "123",
-    ref: "refs/heads/main",
-    workflow_ref: "xd-dash/huram-abi-master/.github/workflows/example.yml@refs/heads/main",
+    ref: "refs/heads/untrusted",
+    workflow_ref: "example-org/example-repo/.github/workflows/example.yml@refs/heads/untrusted",
   }, env), assertAuthError("ref_forbidden"))
 })
 
 test("GitHub policy can bind immutable owner and repository ids", () => {
   const stableEnv: GitHubEnv = {
     ...env,
-    GITHUB_OWNER_ID: "271412537",
-    GITHUB_REPOSITORY_IDS: "1357822489",
+    GITHUB_OWNER_ID: "1001",
+    GITHUB_REPOSITORY_IDS: "2001",
   }
 
   assert.doesNotThrow(() => authorizeGitHubClaims({
-    repository: "xd-dash/huram-abi-master",
-    repository_id: "1357822489",
-    repository_owner: "xd-dash",
-    repository_owner_id: "271412537",
+    repository: "example-org/example-repo",
+    repository_id: "2001",
+    repository_owner: "example-org",
+    repository_owner_id: "1001",
     run_id: "123",
-    ref: "refs/heads/automation",
-    workflow_ref: "xd-dash/huram-abi-master/.github/workflows/example.yml@refs/heads/automation",
+    ref: "refs/heads/main",
+    workflow_ref: "example-org/example-repo/.github/workflows/example.yml@refs/heads/main",
   }, stableEnv))
 
   assert.throws(() => authorizeGitHubClaims({
-    repository: "xd-dash/huram-abi-master",
-    repository_id: "999",
-    repository_owner: "xd-dash",
-    repository_owner_id: "271412537",
+    repository: "example-org/example-repo",
+    repository_id: "9999",
+    repository_owner: "example-org",
+    repository_owner_id: "1001",
     run_id: "123",
-    ref: "refs/heads/automation",
-    workflow_ref: "xd-dash/huram-abi-master/.github/workflows/example.yml@refs/heads/automation",
+    ref: "refs/heads/main",
+    workflow_ref: "example-org/example-repo/.github/workflows/example.yml@refs/heads/main",
   }, stableEnv), assertAuthError("repository_id_forbidden"))
 })
 
@@ -85,23 +85,23 @@ test("GitHub provider verifies an RS256 assertion with Hono JWT and normalizes i
   const header = encode({ alg: "RS256", typ: "JWT", kid: "test-kid" })
   const payload = encode({
     iss: "https://token.actions.githubusercontent.com",
-    sub: "repo:xd-dash/huram-abi-master:ref:refs/heads/automation",
-    aud: "auth.net.im",
+    sub: "repo:example-org/example-repo:ref:refs/heads/main",
+    aud: "https://service.example",
     iat: now - 5,
     nbf: now - 5,
     exp: now + 300,
     jti: "token-id",
-    repository: "xd-dash/huram-abi-master",
-    repository_id: "1357822489",
-    repository_owner: "xd-dash",
-    repository_owner_id: "271412537",
-    ref: "refs/heads/automation",
-    workflow_ref: "xd-dash/huram-abi-master/.github/workflows/example.yml@refs/heads/automation",
+    repository: "example-org/example-repo",
+    repository_id: "2001",
+    repository_owner: "example-org",
+    repository_owner_id: "1001",
+    ref: "refs/heads/main",
+    workflow_ref: "example-org/example-repo/.github/workflows/example.yml@refs/heads/main",
     workflow_sha: "deadbeef",
     run_id: "123",
     run_attempt: "1",
-    actor: "dash-xd",
-    actor_id: "125025267",
+    actor: "example-user",
+    actor_id: "3001",
   })
   const signed = `${header}.${payload}`
   const signature = await crypto.subtle.sign(
@@ -111,7 +111,7 @@ test("GitHub provider verifies an RS256 assertion with Hono JWT and normalizes i
   )
   const token = `${signed}.${Buffer.from(signature).toString("base64url")}`
 
-  const request = new Request("https://auth.net.im/v1/auth/github", {
+  const request = new Request("https://service.example/v1/auth/github", {
     method: "POST",
     headers: { authorization: `Bearer ${token}` },
   })
@@ -121,9 +121,9 @@ test("GitHub provider verifies an RS256 assertion with Hono JWT and normalizes i
   }).authenticate({ request, env })
 
   assert.equal(identity.provider, "github")
-  assert.equal(identity.subject, "repo:xd-dash/huram-abi-master:ref:refs/heads/automation")
-  assert.equal(identity.attributes.repository, "xd-dash/huram-abi-master")
-  assert.equal(identity.attributes.repository_id, "1357822489")
+  assert.equal(identity.subject, "repo:example-org/example-repo:ref:refs/heads/main")
+  assert.equal(identity.attributes.repository, "example-org/example-repo")
+  assert.equal(identity.attributes.repository_id, "2001")
   assert.equal(identity.attributes.run_id, "123")
   assert.equal(identity.attributes.jti, "token-id")
 })
