@@ -14,12 +14,14 @@ type AppEnv = {
   }
 }
 
-function response(body: unknown, status = 200): Response {
-  return Response.json(body, {
+function response(body: unknown, status = 200, headers?: HeadersInit): Response {
+  const responseHeaders = new Headers(headers)
+  responseHeaders.set("cache-control", "no-store")
+  responseHeaders.set("content-type", "application/json; charset=UTF-8")
+
+  return new Response(JSON.stringify(body), {
     status,
-    headers: {
-      "cache-control": "no-store",
-    },
+    headers: responseHeaders,
   })
 }
 
@@ -31,7 +33,10 @@ app.onError((error) => {
       authenticated: false,
       error: { code: error.code, message: error.message },
     }
-    return response(body, error.status)
+    const headers = error.status === 401
+      ? { "www-authenticate": "Bearer" }
+      : undefined
+    return response(body, error.status, headers)
   }
 
   console.error("auth provider failure", error)
