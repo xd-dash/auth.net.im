@@ -5,8 +5,8 @@ This file is the maintenance contract for `xd-dash/auth.net.im`. `README.md` is 
 ## Roles
 
 ```text
-Huram ABI
-  qualifies and deploys exact infrastructure/runtime candidates
+qualification / deployment owner
+  owns exact runtime policy and live qualification
 
 Cloudflare Worker
   hosts this HTTP runtime
@@ -15,7 +15,7 @@ Hono
   owns HTTP routing/middleware composition
 
 Auth provider
-  verifies one external assertion format and applies local policy
+  verifies one external assertion format and applies supplied policy
 
 External issuer
   owns the assertion and signing keys
@@ -89,6 +89,22 @@ The provider registry must remain type-safe. Do not erase provider environment c
 
 Provider names are normalized only for registry lookup. Authentication and authorization policy remain provider-owned.
 
+## Policy ownership
+
+Provider code owns policy semantics and configuration shape. It must not own one deployment's policy values.
+
+Concrete values such as an organization name, repository name or ID, branch/ref allowlist, workflow path, audience, or deployment endpoint belong to the deployment/qualification authority. Do not embed those values in:
+
+```text
+src/
+wrangler.jsonc
+package tests
+```
+
+`GitHubEnv` is the generic binding contract for GitHub policy. Its field names are part of the provider API; the values are deployment inputs.
+
+Package tests must use synthetic identities such as `example-org/example-repo`. Real workload identity verification belongs in an external qualification harness that injects real policy and obtains a real issuer assertion for an exact package revision.
+
 ## GitHub OIDC provider
 
 GitHub Actions OIDC is assertion verification, not token exchange.
@@ -108,12 +124,12 @@ Hono verifyWithJwks
     aud = configured audience
     exp / nbf / iat validation
     ↓
-local owner/repository/id/ref/workflow policy
+local owner/repository/id/ref/workflow policy supplied by deployment
     ↓
 provider-neutral AuthIdentity
 ```
 
-Required policy:
+Required policy bindings:
 
 ```text
 GITHUB_AUDIENCE
@@ -183,16 +199,27 @@ but useful provider-specific conveniences should be surfaced through the provide
 
 ## Qualification
 
-Qualification should cover:
+Package qualification should cover:
 
 ```text
-provider policy tests
-cryptographic assertion verification
+synthetic provider policy tests
+cryptographic assertion verification with deterministic/local keys
 public package import tests
 middleware identity propagation
 HTTP error/header behavior
 TypeScript strict check
-Wrangler deploy --dry-run
+Wrangler deploy --dry-run without deployment policy
+```
+
+Deployment qualification should additionally cover:
+
+```text
+exact package revision
+exact injected deployment policy
+exact Worker startup/deploy boundary
+real issuer assertion
+real signature/JWKS verification
+real workload claims against deployment policy
 ```
 
 For provider/package changes:
@@ -202,11 +229,13 @@ For provider/package changes:
 2. keep framework concerns in thin adapters
 3. keep public provider APIs cohesive
 4. avoid `any` at provider composition boundaries
-5. add edge-case tests before relying on new policy
-6. run npm test
-7. run TypeScript check
-8. run Wrangler deploy --dry-run
-9. update README and this file when public behavior/invariants change
+5. keep deployment values outside the package
+6. add generic edge-case tests before relying on new policy
+7. run npm test
+8. run TypeScript check
+9. run Wrangler deploy --dry-run
+10. qualify real workload identity in the deployment owner when policy behavior changes
+11. update README and this file when public behavior/invariants change
 ```
 
 Prefer the least-powerful primitive that gives exact semantics.
