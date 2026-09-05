@@ -1,11 +1,15 @@
 import type { AuthProvider } from "../auth/types"
-import { github } from "./github"
+import { github, type GitHubEnv } from "./github"
 
-const providers = new Map<string, AuthProvider<any>>([
+export type ProviderEnv = GitHubEnv
+
+type RegisteredProvider = AuthProvider<ProviderEnv>
+
+const providers = new Map<string, RegisteredProvider>([
   [github.name, github],
 ])
 
-export function getProvider(name: string): AuthProvider<any> | undefined {
+export function getProvider(name: string): RegisteredProvider | undefined {
   return providers.get(name.trim().toLowerCase())
 }
 
