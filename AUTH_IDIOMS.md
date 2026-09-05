@@ -124,6 +124,8 @@ Hono verifyWithJwks
     aud = configured audience
     exp / nbf / iat validation
     ↓
+validate required workload-identity claim types
+    ↓
 local owner/repository/id/ref/workflow policy supplied by deployment
     ↓
 provider-neutral AuthIdentity
@@ -137,6 +139,8 @@ GITHUB_OWNER
 GITHUB_REPOSITORIES
 ```
 
+`GITHUB_REPOSITORIES` must resolve to at least one non-empty CSV entry. A syntactically present but empty list is provider misconfiguration, not an authorization miss.
+
 Optional tightening:
 
 ```text
@@ -147,6 +151,8 @@ GITHUB_WORKFLOW_PREFIX
 ```
 
 When immutable owner/repository IDs are configured they are additional requirements, not replacements for the readable names. Prefer configuring them for durable workload identity because names can be renamed or recycled while IDs are stable.
+
+Required workload claims such as `repository`, `repository_owner`, and `run_id` must be non-empty strings at runtime. Never trust TypeScript claim types as a substitute for runtime validation of an externally supplied JWT payload.
 
 Never use repository/ref/workflow claims as authorization authority until signature, issuer, audience, and time verification succeeds.
 
@@ -203,6 +209,8 @@ Package qualification should cover:
 
 ```text
 synthetic provider policy tests
+malformed external claim types
+provider misconfiguration boundaries
 cryptographic assertion verification with deterministic/local keys
 public package import tests
 middleware identity propagation
