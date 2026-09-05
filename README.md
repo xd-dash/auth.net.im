@@ -4,6 +4,25 @@
 
 The Worker host owns HTTP routing and response normalization. Providers own verification and provider-specific authorization policy. The first provider is GitHub Actions OIDC.
 
+```text
+Huram ABI
+    exact qualification / deployment authority
+        ↓
+Cloudflare Worker
+    runtime host
+        ↓
+auth.net.im host contract
+    provider-neutral routing
+        ↓
+composed auth providers
+    github
+    future google
+    future cloudflare-access
+    ...
+```
+
+Cloudflare is the runtime/deployment provider here, not the authentication authority. GitHub is currently the identity provider. When Cloudflare-specific operations are exposed through Smoke, they should likewise live in a modular Cloudflare provider rather than becoming Smoke-core branches.
+
 Canonical API:
 
 ```text
@@ -11,11 +30,11 @@ POST /v1/auth/:provider
 Authorization: Bearer <provider assertion>
 ```
 
-The provider-neutral contract is defined in `src/auth/types.ts`. Provider composition is explicit in `src/providers/index.ts`.
+The provider-neutral contract is defined in `src/auth/types.ts`. Provider composition is explicit in `src/providers/index.ts`. Architectural and maintenance invariants are recorded in `AUTH_IDIOMS.md`.
 
 ## GitHub Actions OIDC
 
-The GitHub provider verifies GitHub's RS256-signed OIDC assertion, checks issuer/audience/time validity, and applies local repository/ref/workflow policy from Worker environment variables.
+The GitHub provider verifies GitHub's RS256-signed OIDC assertion, checks issuer/audience/time validity, verifies the signature against GitHub's JWKS, and then applies local repository/ref/workflow policy from Worker environment variables.
 
 Required Worker vars:
 
@@ -76,7 +95,20 @@ Successful responses use the same provider-neutral identity envelope regardless 
 
 Provider-specific code belongs under `src/providers/<provider>/`. A provider exports the shared `AuthProvider` contract and is registered in `src/providers/index.ts`. Do not add provider-specific branching to the Worker host.
 
-Cloudflare is the runtime/deployment provider here, not the authentication authority. The authentication authority remains whichever provider verifies the incoming assertion.
+The same general rule applies when Smoke gains Cloudflare functionality:
+
+```text
+Smoke core
+    composition + stable provider contracts
+
+provider/cloudflare
+    Cloudflare API / Wrangler behavior
+
+Huram
+    exact smoke qualification + infrastructure authority
+```
+
+The fact that Smoke grew out of Huram smoke tests should not turn Huram or Cloudflare into hidden special cases inside Smoke.
 
 ## Local qualification
 
@@ -87,4 +119,4 @@ npm run check
 npm run dev
 ```
 
-`npm run check` uses Wrangler's dry-run deploy path, matching the local Cloudflare Worker qualification idiom used by Huram.
+`npm run check` runs TypeScript validation plus Wrangler's deploy dry-run path, matching the local Cloudflare Worker qualification boundary already used by Huram.
