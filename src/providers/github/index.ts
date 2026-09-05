@@ -1,5 +1,7 @@
+import { githubAuth } from "../../hono/github"
+import { GitHubProvider as GitHubProviderBase } from "./provider"
+
 export {
-  GitHubProvider,
   authorizeGitHubClaims,
   github,
 } from "./provider"
@@ -16,10 +18,6 @@ export type {
   GitHubAuthVariables,
 } from "../../hono/github"
 
-export { githubAuth } from "../../hono/github"
-
-import { githubAuth } from "../../hono/github"
-
-export const middleware = {
-  auth: githubAuth,
-}
+export const GitHubProvider = Object.assign(GitHubProviderBase, {
+  middleware: githubAuth,
+})
