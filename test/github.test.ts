@@ -68,6 +68,30 @@ test("GitHub policy can bind immutable owner and repository ids", () => {
   }, stableEnv), assertAuthError("repository_id_forbidden"))
 })
 
+test("GitHub policy rejects malformed workload claim types", () => {
+  const malformed = {
+    repository: 123,
+    repository_owner: "example-org",
+    run_id: "123",
+    ref: "refs/heads/main",
+    workflow_ref: "example-org/example-repo/.github/workflows/example.yml@refs/heads/main",
+  } as unknown as Parameters<typeof authorizeGitHubClaims>[0]
+
+  assert.throws(() => authorizeGitHubClaims(malformed, env), assertAuthError("missing_workload_identity"))
+})
+
+test("GitHub policy treats an empty repository list as provider misconfiguration", () => {
+  assert.throws(() => authorizeGitHubClaims({
+    repository: "example-org/example-repo",
+    repository_owner: "example-org",
+    run_id: "123",
+  }, {
+    GITHUB_AUDIENCE: "https://service.example",
+    GITHUB_OWNER: "example-org",
+    GITHUB_REPOSITORIES: " , ",
+  }), assertAuthError("provider_misconfigured"))
+})
+
 test("GitHub provider verifies an RS256 assertion with Hono JWT and normalizes identity", async () => {
   const keys = await crypto.subtle.generateKey(
     {
