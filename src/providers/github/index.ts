@@ -43,11 +43,15 @@ const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 const keyCache = new Map<string, { key: CryptoKey; expiresAt: number }>()
 
-function base64UrlDecode(value: string): Uint8Array {
+function base64UrlDecode(value: string): ArrayBuffer {
   const normalized = value.replaceAll("-", "+").replaceAll("_", "/")
   const padded = normalized + "=".repeat((4 - normalized.length % 4) % 4)
   const binary = atob(padded)
-  return Uint8Array.from(binary, c => c.charCodeAt(0))
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes.buffer
 }
 
 function decodePart<T>(value: string): T {
@@ -191,7 +195,7 @@ export class GitHubProvider implements AuthProvider<GitHubEnv> {
     const fetcher = input.fetcher ?? fetch
     const key = await publicKey(header.kid, fetcher, now)
 
-    let signature: Uint8Array
+    let signature: ArrayBuffer
     try {
       signature = base64UrlDecode(parts[2])
     } catch {
