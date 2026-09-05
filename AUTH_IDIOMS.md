@@ -1,6 +1,6 @@
 # auth.net.im idioms
 
-This file is the maintenance contract for `xd-dash/auth.net.im`. `README.md` is the user-facing guide; this file records the architectural invariants that future changes should preserve unless a new requirement genuinely needs a different primitive.
+This file is the maintenance contract for `xd-dash/auth.net.im`. `README.md` is the user-facing guide; this file records the architectural invariants future changes should preserve unless a new requirement genuinely needs a different primitive.
 
 ## Roles
 
@@ -14,21 +14,18 @@ Cloudflare Worker
 Hono
   owns HTTP routing/middleware composition
 
-Auth host
-  owns provider-neutral response normalization
-
 Auth provider
-  verifies one external assertion format and applies its local policy
+  verifies one external assertion format and applies local policy
 
 External issuer
-  owns the actual identity assertion and signing keys
+  owns the assertion and signing keys
 ```
 
-Cloudflare is therefore a runtime/deployment provider here, not an authentication authority. Hono is an HTTP primitive of this Worker. GitHub is currently the first authentication provider.
+Cloudflare is runtime/deployment, Hono is an HTTP primitive, and GitHub is currently the first authentication provider.
 
 ## Provider contract
 
-All authentication providers implement the shared TypeScript contract in `src/auth/types.ts`:
+All providers implement the shared contract in `src/auth/types.ts`:
 
 ```text
 AuthProvider
@@ -37,7 +34,7 @@ AuthProvider
         -> AuthIdentity
 ```
 
-`AuthIdentity` is deliberately provider-neutral:
+`AuthIdentity` remains provider-neutral:
 
 ```text
 provider
@@ -45,76 +42,70 @@ subject
 attributes[string]string
 ```
 
-Provider-specific claims must be normalized into that envelope. Do not make the Hono host understand GitHub-specific claims, Google-specific claims, Cloudflare Access claims, etc.
+Provider-specific claims must be normalized into that envelope. The Hono host must not understand GitHub-specific claims.
 
 ## Public package contract
 
-`auth.net.im` is also a reusable package named:
+The reusable package is:
 
 ```text
 @xd-dash/auth.net.im
 ```
 
-Supported subpath exports are an architectural contract:
+Supported public subpaths are:
 
 ```text
 @xd-dash/auth.net.im/core
     provider-neutral primitives
 
 @xd-dash/auth.net.im/github
-    GitHub provider primitive
-
-@xd-dash/auth.net.im/hono/github
-    optional Hono adapter around the GitHub provider
+    GitHubProvider
+    GitHubEnv
+    GitHubClaims
+    middleware.auth()
 ```
 
-Keep the layers directional:
+Do not expose framework directory layout as a second public provider surface merely because an adapter is implemented there. The conceptual public unit is the provider.
+
+Keep dependency direction:
 
 ```text
 core
   ↑
-github provider
+github provider primitive
   ↑
-hono/github adapter
+internal Hono adapter
+  ↑
+@xd-dash/auth.net.im/github public composition surface
   ↑
 application composition
 ```
 
 The provider primitive must not accept or require a Hono `Context`. It consumes standard Web `Request` plus environment through `AuthInput`. Framework adapters may depend on provider primitives, never the reverse.
 
-The Hono adapter stores the normalized identity in `c.get("authIdentity")` and then calls `next()`. It does not redefine identity verification or authorization policy. Errors remain typed provider errors and are handled by the consuming application's Hono error boundary.
+The Hono adapter stores normalized identity as `authIdentity` and calls `next()`. It does not redefine verification or authorization policy. It accepts `AuthProvider<GitHubEnv>` so callers can inject wrapped/deterministic providers.
 
-The adapter accepts `AuthProvider<GitHubEnv>` rather than only the concrete `GitHubProvider`; preserve that interface boundary so callers can wrap/inject providers and tests can use deterministic implementations.
+The canonical `auth.net.im` Worker should consume `middleware.auth()` from the same GitHub public composition surface used by downstream Workers.
 
-The canonical `auth.net.im` Worker must consume the same public-style Hono adapter that downstream Workers consume. This keeps the reusable contract exercised rather than maintaining a separate internal implementation path.
-
-Source-level exports are intentional for the current Wrangler composition model. A downstream Worker may depend on an exact Git repository commit/tag and import the declared subpaths. `private: true` prevents accidental npm publication; it does not make the Git-composed package surface private.
+Source-level exports are intentional for the Wrangler/Git composition model. `private: true` prevents accidental npm publication; it does not make Git-composed subpath imports private.
 
 ## Composition
 
-Providers live under:
+Provider implementations live under:
 
 ```text
 src/providers/<provider>/
 ```
 
-and are composed explicitly in:
-
-```text
-src/providers/index.ts
-```
-
-Framework adapters live under:
+Framework adapters may live under internal paths such as:
 
 ```text
 src/<framework>/<provider>/
 ```
 
-The registry is the application composition boundary. Adding a provider means importing/registering its implementation there. Avoid dynamic module loading, remote code loading, or provider discovery inside request handling unless a future requirement proves static composition insufficient.
+but their useful provider-specific capabilities should be surfaced through the provider's public subpath when that produces a simpler composition contract.
 
-This mirrors the Smoke rule: optional behavior is selected at composition time; runtime dispatch uses a small stable contract.
-
-Hono belongs below that composition boundary. It handles routing and middleware ergonomics; it is not itself the provider registry or identity contract.
+This mirrors Smoke: optional behavior is selected compositionally while runtime dispatch uses small stable contracts.
 
 ## HTTP contract
 
@@ -125,55 +116,19 @@ POST /v1/auth/:provider
 Authorization: Bearer <provider assertion>
 ```
 
-Success:
-
-```json
-{
-  "authenticated": true,
-  "identity": {
-    "provider": "...",
-    "subject": "...",
-    "attributes": {}
-  }
-}
-```
-
-Failure:
-
-```json
-{
-  "authenticated": false,
-  "error": {
-    "code": "...",
-    "message": "..."
-  }
-}
-```
-
-The host owns this wire shape. Providers throw typed `AuthError` values and do not construct HTTP responses.
+Providers throw typed `AuthError` values and do not construct the host's HTTP response envelope.
 
 ## JWT primitive
 
-Providers that consume JWT assertions should prefer Hono's `hono/jwt` helper over hand-rolled JWT parsing/signature verification.
+Providers consuming JWT assertions should prefer Hono's `hono/jwt` helpers over hand-rolled JWT verification. Do not force non-JWT providers through JWT abstractions.
 
-Use only the JWT pieces the provider needs:
-
-```text
-decode
-verify
-verifyWithJwks
-jwt middleware
-```
-
-Do not force non-JWT providers through JWT abstractions.
-
-For externally signed JWTs, explicitly constrain allowed algorithms. Never derive acceptable algorithms solely from an unverified JWT header. Pin Hono to a version containing the current JWK/JWT security fixes and keep that version covered by exact CI qualification.
+For externally signed JWTs, explicitly constrain allowed algorithms. Never derive acceptable algorithms solely from an unverified JWT header.
 
 ## GitHub provider
 
 GitHub Actions OIDC is assertion verification, not token exchange.
 
-The provider uses Hono's JWT helper and must preserve this flow:
+Preserve this flow:
 
 ```text
 Bearer assertion
@@ -193,8 +148,6 @@ local owner/repository/ref/workflow policy
 provider-neutral AuthIdentity
 ```
 
-Authorization policy belongs in Worker configuration, not in JWT parsing logic.
-
 Current configuration surface:
 
 ```text
@@ -205,77 +158,44 @@ GITHUB_REFS
 GITHUB_WORKFLOW_PREFIX
 ```
 
-Comma-separated lists are exact allowlists. Empty optional restrictions mean that dimension is not restricted. Required configuration must fail closed.
-
-Never use `repository`, `ref`, `workflow_ref`, or other identity claims as authorization authority until Hono has completed signature/issuer/audience/time verification.
-
-## Key handling
-
-GitHub signing keys are public material and are resolved through GitHub's JWKS endpoint by Hono's `verifyWithJwks` helper. Tests may inject exact JWKs into the provider constructor to keep signature verification deterministic without changing the production contract.
-
-Private application credentials do not belong in this provider unless a later token-issuing capability explicitly needs them. If application secrets are added, use Worker secrets/bindings, never checked-in vars.
+Never use identity claims as authorization authority until signature/issuer/audience/time verification succeeds.
 
 ## Huram relationship
 
-Huram remains the qualification and infrastructure control plane. `auth.net.im` should be locally qualified with the same Wrangler boundary Huram uses for Cloudflare Workers:
+Huram remains qualification and infrastructure control plane. Qualification should cover:
 
 ```text
 provider tests
-package export tests
+public package import tests
 TypeScript check
 Wrangler deploy --dry-run
-Wrangler dev --local when black-box HTTP behavior needs qualification
+Wrangler dev --local when black-box HTTP behavior changes
 ```
 
-A Huram smoke workflow may consume this repository at an exact commit SHA. That workflow proves deployability/behavior; it does not become the runtime implementation.
-
-Keep these boundaries separate:
-
-```text
-source implementation
-    auth.net.im
-
-HTTP primitive
-    Hono
-
-local/exact qualification
-    Huram automation/worktree-automation
-
-stable Cloudflare desired state / deployment policy
-    Huram durable contracts
-```
+A Huram smoke workflow may consume this repository at an exact commit SHA. That proves deployability/behavior; it does not become the runtime implementation.
 
 ## Cloudflare provider rule
 
-When Cloudflare functionality is exposed through Smoke, prefer a modular Cloudflare provider package rather than adding Cloudflare branches to Smoke core. Examples include deployment, Worker inventory, DNS inventory, and exact qualification helpers.
-
-The primitive boundary should remain small:
+When Cloudflare functionality is exposed through Smoke, prefer a modular Cloudflare provider rather than adding Cloudflare branches to Smoke core.
 
 ```text
 Smoke core
-    composition
-    command/provider contracts
-    process lifecycle
+    stable composition/contracts
 
 provider/cloudflare
-    Cloudflare API/Wrangler-specific behavior
+    Cloudflare API/Wrangler behavior
 
 Huram
     exact infrastructure authority and qualification evidence
 ```
 
-Do not make Cloudflare itself a hidden special case in Smoke just because many early Smoke behaviors originated as Huram Cloudflare smoke tests.
-
 ## Security invariants
 
 - Provider assertions are bearer credentials; never log them.
 - Authentication responses use `Cache-Control: no-store`.
-- Provider errors exposed to callers are bounded and do not include raw tokens, signing keys, or stack traces.
-- Unknown providers fail closed.
-- Provider configuration errors fail closed.
+- Unknown providers and provider configuration errors fail closed.
 - JWT algorithms are explicitly allowlisted for asymmetric verification.
 - Authorization is local policy over a cryptographically verified external identity.
-- Authentication and authorization are separate conceptual steps even when implemented in one provider method.
 - DNS, routing, runtime hosting, and identity authority are separate roles.
 
 ## Change protocol
@@ -284,18 +204,16 @@ For provider/package changes:
 
 ```text
 1. update provider primitive
-2. keep framework-specific concerns in optional adapters
-3. use Hono helpers for HTTP/JWT primitives where appropriate
-4. add/update contract-focused unit tests
-5. test package subpath imports through the declared package name
-6. keep the provider primitive framework-neutral
-7. keep the host provider-neutral
-8. run npm test
-9. run TypeScript check
-10. run Wrangler deploy --dry-run
-11. for HTTP/lifecycle changes, run Wrangler local black-box smoke
-12. update README when user behavior changes
-13. update this idiom file when architectural invariants change
+2. keep framework concerns in thin adapters
+3. surface provider conveniences through the provider public subpath
+4. avoid exposing internal adapter directory layout unless independently useful
+5. add/update contract tests using declared package imports
+6. keep provider primitive framework-neutral
+7. run npm test
+8. run TypeScript check
+9. run Wrangler deploy --dry-run
+10. update README for user-visible changes
+11. update this file for architectural changes
 ```
 
-Prefer the least-powerful new primitive. If a feature can be implemented as another provider or thin framework adapter under the existing contracts, do that instead of expanding the host.
+Prefer the least-powerful new primitive. If a feature fits as another provider capability or thin adapter, do that instead of expanding the host.
