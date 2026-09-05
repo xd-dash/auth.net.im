@@ -1,0 +1,17 @@
+{
+  "name": "auth.net.im",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "check": "tsc --noEmit && wrangler deploy --dry-run --outdir .wrangler-dry-run",
+    "test": "tsx --test test/**/*.test.ts"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260904.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "wrangler": "4.129.0"
+  }
+}
