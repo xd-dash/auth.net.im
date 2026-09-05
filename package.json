@@ -1,8 +1,13 @@
 {
-  "name": "auth.net.im",
+  "name": "@xd-dash/auth.net.im",
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./core": "./src/auth/index.ts",
+    "./github": "./src/providers/github/index.ts",
+    "./hono/github": "./src/hono/github.ts"
+  },
   "scripts": {
     "dev": "wrangler dev --local",
     "check": "tsc --noEmit && wrangler deploy --dry-run --outdir .wrangler-dry-run",
