@@ -2,7 +2,7 @@ import { Hono } from "hono"
 
 import { AuthError } from "./auth/error"
 import type { AuthFailure, AuthIdentity, AuthSuccess } from "./auth/types"
-import { middleware as githubMiddleware, type GitHubEnv } from "./providers/github"
+import { GitHubProvider, type GitHubEnv } from "./providers/github"
 import { getProvider, providerNames } from "./providers"
 
 export type Env = GitHubEnv
@@ -46,7 +46,7 @@ app.get("/healthz", c => c.json({ ok: true }))
 
 app.get("/v1/providers", c => c.json({ providers: providerNames() }))
 
-app.use("/v1/auth/github", githubMiddleware.auth())
+app.use("/v1/auth/github", GitHubProvider.middleware())
 app.post("/v1/auth/github", c => {
   const body: AuthSuccess = {
     authenticated: true,
