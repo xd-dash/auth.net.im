@@ -62,38 +62,62 @@ function csv(value: string | undefined): string[] {
     .filter(Boolean)
 }
 
+function requiredClaim(claims: GitHubClaims, name: keyof GitHubClaims): string {
+  const value = claims[name]
+  if (typeof value !== "string" || !value.trim()) {
+    throw new AuthError(403, "missing_workload_identity", "GitHub workload identity claims are incomplete")
+  }
+  return value
+}
+
 export function authorizeGitHubClaims(claims: GitHubClaims, env: GitHubEnv): void {
   const owner = required(env, "GITHUB_OWNER")
   const repositories = csv(required(env, "GITHUB_REPOSITORIES"))
-
-  if (!claims.repository || !claims.repository_owner || !claims.run_id) {
-    throw new AuthError(403, "missing_workload_identity", "GitHub workload identity claims are incomplete")
+  if (repositories.length === 0) {
+    throw new AuthError(500, "provider_misconfigured", "GitHub provider requires at least one repository")
   }
-  if (claims.repository_owner !== owner) {
+
+  const repository = requiredClaim(claims, "repository")
+  const repositoryOwner = requiredClaim(claims, "repository_owner")
+  requiredClaim(claims, "run_id")
+
+  if (repositoryOwner !== owner) {
     throw new AuthError(403, "owner_forbidden", "GitHub repository owner is not authorized")
   }
-  if (!repositories.includes(claims.repository)) {
+  if (!repositories.includes(repository)) {
     throw new AuthError(403, "repository_forbidden", "GitHub repository is not authorized")
   }
 
   const ownerID = env.GITHUB_OWNER_ID?.trim()
-  if (ownerID && claims.repository_owner_id !== ownerID) {
-    throw new AuthError(403, "owner_id_forbidden", "GitHub repository owner id is not authorized")
+  if (ownerID) {
+    const claim = claims.repository_owner_id
+    if (typeof claim !== "string" || claim !== ownerID) {
+      throw new AuthError(403, "owner_id_forbidden", "GitHub repository owner id is not authorized")
+    }
   }
 
   const repositoryIDs = csv(env.GITHUB_REPOSITORY_IDS)
-  if (repositoryIDs.length > 0 && (!claims.repository_id || !repositoryIDs.includes(claims.repository_id))) {
-    throw new AuthError(403, "repository_id_forbidden", "GitHub repository id is not authorized")
+  if (repositoryIDs.length > 0) {
+    const claim = claims.repository_id
+    if (typeof claim !== "string" || !repositoryIDs.includes(claim)) {
+      throw new AuthError(403, "repository_id_forbidden", "GitHub repository id is not authorized")
+    }
   }
 
   const refs = csv(env.GITHUB_REFS)
-  if (refs.length > 0 && (!claims.ref || !refs.includes(claims.ref))) {
-    throw new AuthError(403, "ref_forbidden", "GitHub ref is not authorized")
+  if (refs.length > 0) {
+    const claim = claims.ref
+    if (typeof claim !== "string" || !refs.includes(claim)) {
+      throw new AuthError(403, "ref_forbidden", "GitHub ref is not authorized")
+    }
   }
 
   const workflowPrefix = env.GITHUB_WORKFLOW_PREFIX?.trim()
-  if (workflowPrefix && (!claims.workflow_ref || !claims.workflow_ref.startsWith(workflowPrefix))) {
-    throw new AuthError(403, "workflow_forbidden", "GitHub workflow is not authorized")
+  if (workflowPrefix) {
+    const claim = claims.workflow_ref
+    if (typeof claim !== "string" || !claim.startsWith(workflowPrefix)) {
+      throw new AuthError(403, "workflow_forbidden", "GitHub workflow is not authorized")
+    }
   }
 }
 
@@ -116,7 +140,9 @@ function normalizedIdentity(claims: GitHubClaims): AuthIdentity {
     if (typeof value === "string" && value) attributes[key] = value
   }
 
-  const subject = claims.sub || `repo:${claims.repository}:ref:${claims.ref ?? ""}`
+  const subject = typeof claims.sub === "string" && claims.sub
+    ? claims.sub
+    : `repo:${claims.repository}:ref:${claims.ref ?? ""}`
   return { provider: "github", subject, attributes }
 }
 
@@ -150,8 +176,8 @@ export class GitHubProvider implements AuthProvider<GitHubEnv> {
         },
       }) as GitHubClaims
 
-      if (!payload.exp) {
-        throw new AuthError(403, "missing_expiration", "GitHub OIDC assertion must include an expiration")
+      if (!Number.isInteger(payload.exp)) {
+        throw new AuthError(403, "missing_expiration", "GitHub OIDC assertion must include an integer expiration")
       }
 
       authorizeGitHubClaims(payload, input.env)
