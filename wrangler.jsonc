@@ -2,14 +2,5 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "auth-net-im",
   "main": "src/index.ts",
-  "compatibility_date": "2026-09-04",
-  "vars": {
-    "GITHUB_AUDIENCE": "auth.net.im",
-    "GITHUB_OWNER": "xd-dash",
-    "GITHUB_OWNER_ID": "271412537",
-    "GITHUB_REPOSITORIES": "xd-dash/huram-abi-master",
-    "GITHUB_REPOSITORY_IDS": "1343039009",
-    "GITHUB_REFS": "refs/heads/automation,refs/heads/worktree-automation",
-    "GITHUB_WORKFLOW_PREFIX": "xd-dash/huram-abi-master/.github/workflows/"
-  }
+  "compatibility_date": "2026-09-04"
 }
