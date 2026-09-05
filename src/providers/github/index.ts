@@ -30,8 +30,13 @@ export type GitHubClaims = {
   actor?: string
 }
 
+export type GitHubJwk = JsonWebKey & {
+  kid: string
+  alg?: string
+}
+
 type GitHubProviderOptions = {
-  keys?: JsonWebKey[]
+  keys?: GitHubJwk[]
 }
 
 function required(env: GitHubEnv, name: keyof GitHubEnv): string {
@@ -93,7 +98,7 @@ function normalizedIdentity(claims: GitHubClaims): AuthIdentity {
 
 export class GitHubProvider implements AuthProvider<GitHubEnv> {
   readonly name = "github"
-  readonly #keys?: JsonWebKey[]
+  readonly #keys?: GitHubJwk[]
 
   constructor(options: GitHubProviderOptions = {}) {
     this.#keys = options.keys
