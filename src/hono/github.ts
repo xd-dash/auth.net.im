@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from "hono"
 
-import type { AuthIdentity } from "../auth/types"
+import type { AuthIdentity, AuthProvider } from "../auth/types"
 import { GitHubProvider, type GitHubEnv } from "../providers/github"
 
 export type GitHubAuthVariables = {
@@ -13,7 +13,7 @@ export type GitHubAuthEnv = {
 }
 
 export type GitHubAuthOptions = {
-  provider?: GitHubProvider
+  provider?: AuthProvider<GitHubEnv>
 }
 
 export function githubAuth(options: GitHubAuthOptions = {}): MiddlewareHandler<GitHubAuthEnv> {
