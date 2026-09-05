@@ -7,7 +7,7 @@ import type { AuthProvider } from "@xd-dash/auth.net.im/core"
 import {
   middleware as github,
   type GitHubEnv,
-} from "@xd-dash/auth.net.im/github"
+} from "@xd-dash/auth.net.im/providers/github"
 
 const provider: AuthProvider<GitHubEnv> = {
   name: "github",
@@ -22,7 +22,7 @@ const provider: AuthProvider<GitHubEnv> = {
   },
 }
 
-test("GitHub package surface exposes middleware.auth and normalized identity", async () => {
+test("GitHub provider package surface exposes middleware.auth and normalized identity", async () => {
   const app = new Hono<{
     Bindings: GitHubEnv
     Variables: {
