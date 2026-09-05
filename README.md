@@ -1,6 +1,6 @@
 # auth.net.im
 
-`auth.net.im` is a lightweight Cloudflare Worker authentication gateway built around Hono and composable authentication providers.
+`auth.net.im` is a lightweight Cloudflare Worker authentication gateway and reusable authentication package built around Hono and composable authentication providers.
 
 The Hono host owns HTTP routing and response normalization. Providers own verification and provider-specific authorization policy. The first provider is GitHub Actions OIDC.
 
@@ -25,12 +25,70 @@ composed auth providers
 
 Cloudflare is the runtime/deployment provider here, not the authentication authority. GitHub is currently the identity provider. When Cloudflare-specific operations are exposed through Smoke, they should likewise live in a modular Cloudflare provider rather than becoming Smoke-core branches.
 
+## Reusable package surface
+
+The repository is also an importable package named `@xd-dash/auth.net.im` with explicit subpath exports:
+
+```text
+@xd-dash/auth.net.im/core
+    AuthProvider
+    AuthIdentity
+    AuthInput
+    AuthError
+
+@xd-dash/auth.net.im/github
+    GitHubProvider
+    GitHubEnv
+    GitHubClaims
+
+@xd-dash/auth.net.im/hono/github
+    githubAuth()
+```
+
+The GitHub provider itself does not depend on Hono `Context`. It consumes the provider-neutral `Request + env` contract. The Hono adapter is a thin optional layer over that primitive.
+
+A different Hono Worker can therefore compose the GitHub provider directly as middleware:
+
+```ts
+import { Hono } from "hono"
+import {
+  githubAuth,
+  type GitHubAuthEnv,
+} from "@xd-dash/auth.net.im/hono/github"
+
+const app = new Hono<GitHubAuthEnv>()
+
+app.use("/protected/*", githubAuth())
+
+app.get("/protected/me", c => {
+  return c.json(c.get("authIdentity"))
+})
+
+export default app
+```
+
+For a Git dependency, a consuming project can point its dependency at an exact repository ref while retaining the package imports, for example:
+
+```json
+{
+  "dependencies": {
+    "@xd-dash/auth.net.im": "github:xd-dash/auth.net.im#<commit-or-tag>"
+  }
+}
+```
+
+The package remains `private` to prevent accidental npm publication; Git-based composition still uses the declared package name and `exports` map.
+
+## REST application
+
 Canonical API:
 
 ```text
 POST /v1/auth/:provider
 Authorization: Bearer <provider assertion>
 ```
+
+The canonical `auth.net.im` Worker consumes the same exported `githubAuth()` middleware used by downstream Workers, so the reusable adapter is exercised by the application itself.
 
 The provider-neutral contract is defined in `src/auth/types.ts`. Provider composition is explicit in `src/providers/index.ts`. Architectural and maintenance invariants are recorded in `AUTH_IDIOMS.md`.
 
@@ -97,7 +155,7 @@ Successful responses use the same provider-neutral identity envelope regardless 
 
 ## Composition rule
 
-Provider-specific code belongs under `src/providers/<provider>/`. A provider exports the shared `AuthProvider` contract and is registered in `src/providers/index.ts`. Do not add provider-specific branching to the Hono host.
+Provider-specific code belongs under `src/providers/<provider>/`. A provider exports the shared `AuthProvider` contract and is registered in `src/providers/index.ts`. Reusable framework adapters belong under `src/<framework>/<provider>/`. Do not add provider-specific branching to the Hono host when the behavior can be expressed through a provider or adapter.
 
 Hono is a primitive of the HTTP host, not an auth provider. JWT is a helper used by providers that need JWT semantics. A future provider that does not use JWT should not be forced through JWT middleware.
 
