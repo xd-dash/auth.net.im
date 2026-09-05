@@ -36,7 +36,7 @@ test("GitHub policy rejects a different ref", () => {
   }, env), (error: unknown) => error instanceof AuthError && error.code === "ref_forbidden")
 })
 
-test("GitHub provider verifies an RS256 assertion and normalizes identity", async () => {
+test("GitHub provider verifies an RS256 assertion with Hono JWT and normalizes identity", async () => {
   const keys = await crypto.subtle.generateKey(
     {
       name: "RSASSA-PKCS1-v1_5",
@@ -49,8 +49,8 @@ test("GitHub provider verifies an RS256 assertion and normalizes identity", asyn
   )
 
   const publicJwk = await crypto.subtle.exportKey("jwk", keys.publicKey)
-  const now = 1_800_000_000
-  const header = encode({ alg: "RS256", kid: "test-kid" })
+  const now = Math.floor(Date.now() / 1000)
+  const header = encode({ alg: "RS256", typ: "JWT", kid: "test-kid" })
   const payload = encode({
     iss: "https://token.actions.githubusercontent.com",
     sub: "repo:xd-dash/huram-abi-master:ref:refs/heads/automation",
@@ -73,16 +73,15 @@ test("GitHub provider verifies an RS256 assertion and normalizes identity", asyn
   )
   const token = `${signed}.${Buffer.from(signature).toString("base64url")}`
 
-  const fetcher: typeof fetch = async () => Response.json({
-    keys: [{ ...publicJwk, kid: "test-kid" }],
-  })
-
   const request = new Request("https://auth.net.im/v1/auth/github", {
     method: "POST",
     headers: { authorization: `Bearer ${token}` },
   })
 
-  const identity = await new GitHubProvider().authenticate({ request, env, now, fetcher })
+  const identity = await new GitHubProvider({
+    keys: [{ ...publicJwk, kid: "test-kid", alg: "RS256" }],
+  }).authenticate({ request, env })
+
   assert.equal(identity.provider, "github")
   assert.equal(identity.subject, "repo:xd-dash/huram-abi-master:ref:refs/heads/automation")
   assert.equal(identity.attributes.repository, "xd-dash/huram-abi-master")
