@@ -16,6 +16,10 @@ function encode(value: unknown): string {
   return Buffer.from(JSON.stringify(value)).toString("base64url")
 }
 
+function assertAuthError(code: string) {
+  return (error: unknown) => error instanceof AuthError && error.code === code
+}
+
 test("GitHub policy accepts the configured Huram execution rail", () => {
   assert.doesNotThrow(() => authorizeGitHubClaims({
     repository: "xd-dash/huram-abi-master",
@@ -33,7 +37,35 @@ test("GitHub policy rejects a different ref", () => {
     run_id: "123",
     ref: "refs/heads/main",
     workflow_ref: "xd-dash/huram-abi-master/.github/workflows/example.yml@refs/heads/main",
-  }, env), (error: unknown) => error instanceof AuthError && error.code === "ref_forbidden")
+  }, env), assertAuthError("ref_forbidden"))
+})
+
+test("GitHub policy can bind immutable owner and repository ids", () => {
+  const stableEnv: GitHubEnv = {
+    ...env,
+    GITHUB_OWNER_ID: "271412537",
+    GITHUB_REPOSITORY_IDS: "1357822489",
+  }
+
+  assert.doesNotThrow(() => authorizeGitHubClaims({
+    repository: "xd-dash/huram-abi-master",
+    repository_id: "1357822489",
+    repository_owner: "xd-dash",
+    repository_owner_id: "271412537",
+    run_id: "123",
+    ref: "refs/heads/automation",
+    workflow_ref: "xd-dash/huram-abi-master/.github/workflows/example.yml@refs/heads/automation",
+  }, stableEnv))
+
+  assert.throws(() => authorizeGitHubClaims({
+    repository: "xd-dash/huram-abi-master",
+    repository_id: "999",
+    repository_owner: "xd-dash",
+    repository_owner_id: "271412537",
+    run_id: "123",
+    ref: "refs/heads/automation",
+    workflow_ref: "xd-dash/huram-abi-master/.github/workflows/example.yml@refs/heads/automation",
+  }, stableEnv), assertAuthError("repository_id_forbidden"))
 })
 
 test("GitHub provider verifies an RS256 assertion with Hono JWT and normalizes identity", async () => {
@@ -58,12 +90,18 @@ test("GitHub provider verifies an RS256 assertion with Hono JWT and normalizes i
     iat: now - 5,
     nbf: now - 5,
     exp: now + 300,
+    jti: "token-id",
     repository: "xd-dash/huram-abi-master",
+    repository_id: "1357822489",
     repository_owner: "xd-dash",
+    repository_owner_id: "271412537",
     ref: "refs/heads/automation",
     workflow_ref: "xd-dash/huram-abi-master/.github/workflows/example.yml@refs/heads/automation",
+    workflow_sha: "deadbeef",
     run_id: "123",
+    run_attempt: "1",
     actor: "dash-xd",
+    actor_id: "125025267",
   })
   const signed = `${header}.${payload}`
   const signature = await crypto.subtle.sign(
@@ -85,5 +123,7 @@ test("GitHub provider verifies an RS256 assertion with Hono JWT and normalizes i
   assert.equal(identity.provider, "github")
   assert.equal(identity.subject, "repo:xd-dash/huram-abi-master:ref:refs/heads/automation")
   assert.equal(identity.attributes.repository, "xd-dash/huram-abi-master")
+  assert.equal(identity.attributes.repository_id, "1357822489")
   assert.equal(identity.attributes.run_id, "123")
+  assert.equal(identity.attributes.jti, "token-id")
 })
