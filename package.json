@@ -5,8 +5,7 @@
   "type": "module",
   "exports": {
     "./core": "./src/auth/index.ts",
-    "./github": "./src/providers/github/index.ts",
-    "./hono/github": "./src/hono/github.ts"
+    "./github": "./src/providers/github/index.ts"
   },
   "scripts": {
     "dev": "wrangler dev --local",
