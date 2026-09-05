@@ -47,6 +47,49 @@ attributes[string]string
 
 Provider-specific claims must be normalized into that envelope. Do not make the Hono host understand GitHub-specific claims, Google-specific claims, Cloudflare Access claims, etc.
 
+## Public package contract
+
+`auth.net.im` is also a reusable package named:
+
+```text
+@xd-dash/auth.net.im
+```
+
+Supported subpath exports are an architectural contract:
+
+```text
+@xd-dash/auth.net.im/core
+    provider-neutral primitives
+
+@xd-dash/auth.net.im/github
+    GitHub provider primitive
+
+@xd-dash/auth.net.im/hono/github
+    optional Hono adapter around the GitHub provider
+```
+
+Keep the layers directional:
+
+```text
+core
+  ↑
+github provider
+  ↑
+hono/github adapter
+  ↑
+application composition
+```
+
+The provider primitive must not accept or require a Hono `Context`. It consumes standard Web `Request` plus environment through `AuthInput`. Framework adapters may depend on provider primitives, never the reverse.
+
+The Hono adapter stores the normalized identity in `c.get("authIdentity")` and then calls `next()`. It does not redefine identity verification or authorization policy. Errors remain typed provider errors and are handled by the consuming application's Hono error boundary.
+
+The adapter accepts `AuthProvider<GitHubEnv>` rather than only the concrete `GitHubProvider`; preserve that interface boundary so callers can wrap/inject providers and tests can use deterministic implementations.
+
+The canonical `auth.net.im` Worker must consume the same public-style Hono adapter that downstream Workers consume. This keeps the reusable contract exercised rather than maintaining a separate internal implementation path.
+
+Source-level exports are intentional for the current Wrangler composition model. A downstream Worker may depend on an exact Git repository commit/tag and import the declared subpaths. `private: true` prevents accidental npm publication; it does not make the Git-composed package surface private.
+
 ## Composition
 
 Providers live under:
@@ -61,7 +104,13 @@ and are composed explicitly in:
 src/providers/index.ts
 ```
 
-The registry is the composition boundary. Adding a provider means importing/registering its implementation there. Avoid dynamic module loading, remote code loading, or provider discovery inside request handling unless a future requirement proves static composition insufficient.
+Framework adapters live under:
+
+```text
+src/<framework>/<provider>/
+```
+
+The registry is the application composition boundary. Adding a provider means importing/registering its implementation there. Avoid dynamic module loading, remote code loading, or provider discovery inside request handling unless a future requirement proves static composition insufficient.
 
 This mirrors the Smoke rule: optional behavior is selected at composition time; runtime dispatch uses a small stable contract.
 
@@ -172,6 +221,7 @@ Huram remains the qualification and infrastructure control plane. `auth.net.im` 
 
 ```text
 provider tests
+package export tests
 TypeScript check
 Wrangler deploy --dry-run
 Wrangler dev --local when black-box HTTP behavior needs qualification
@@ -230,19 +280,22 @@ Do not make Cloudflare itself a hidden special case in Smoke just because many e
 
 ## Change protocol
 
-For provider changes:
+For provider/package changes:
 
 ```text
-1. update provider implementation
-2. use Hono helpers for HTTP/JWT primitives where appropriate
-3. add/update contract-focused unit tests
-4. keep host provider-neutral
-5. run npm test
-6. run TypeScript check
-7. run Wrangler deploy --dry-run
-8. for HTTP/lifecycle changes, run Wrangler local black-box smoke
-9. update README when user behavior changes
-10. update this idiom file when architectural invariants change
+1. update provider primitive
+2. keep framework-specific concerns in optional adapters
+3. use Hono helpers for HTTP/JWT primitives where appropriate
+4. add/update contract-focused unit tests
+5. test package subpath imports through the declared package name
+6. keep the provider primitive framework-neutral
+7. keep the host provider-neutral
+8. run npm test
+9. run TypeScript check
+10. run Wrangler deploy --dry-run
+11. for HTTP/lifecycle changes, run Wrangler local black-box smoke
+12. update README when user behavior changes
+13. update this idiom file when architectural invariants change
 ```
 
-Prefer the least-powerful new primitive. If a feature can be implemented as another provider under the existing contract, do that instead of expanding the host.
+Prefer the least-powerful new primitive. If a feature can be implemented as another provider or thin framework adapter under the existing contracts, do that instead of expanding the host.
