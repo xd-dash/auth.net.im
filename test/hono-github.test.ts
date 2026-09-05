@@ -14,9 +14,9 @@ const provider: AuthProvider<GitHubEnv> = {
   async authenticate() {
     return {
       provider: "github",
-      subject: "repo:xd-dash/example:ref:refs/heads/main",
+      subject: "repo:example-org/example-repo:ref:refs/heads/main",
       attributes: {
-        repository: "xd-dash/example",
+        repository: "example-org/example-repo",
       },
     }
   },
@@ -37,13 +37,13 @@ test("GitHubProvider package surface exposes middleware and normalized identity"
   app.use("/protected/*", GitHubProvider.middleware({ provider }))
   app.get("/protected/value", c => c.json(c.get("authIdentity")))
 
-  const response = await app.request("https://example.test/protected/value", {}, {})
+  const response = await app.request("https://service.example/protected/value", {}, {})
   assert.equal(response.status, 200)
   assert.deepEqual(await response.json(), {
     provider: "github",
-    subject: "repo:xd-dash/example:ref:refs/heads/main",
+    subject: "repo:example-org/example-repo:ref:refs/heads/main",
     attributes: {
-      repository: "xd-dash/example",
+      repository: "example-org/example-repo",
     },
   })
 })
