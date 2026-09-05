@@ -38,23 +38,23 @@ The repository is an importable package named `@xd-dash/auth.net.im`.
     GitHubProvider
     GitHubEnv
     GitHubClaims
-    middleware.auth()
+    GitHubProvider.middleware()
 ```
 
-Provider implementations are namespaced under `providers`. Consumers still get one public composition surface per provider and do not need to know where framework adapters live internally.
+Provider implementations are namespaced under `providers`. Consumers get one public composition surface per provider and do not need to know where framework adapters live internally.
 
-A Hono Worker can use the GitHub provider surface:
+A Hono Worker can use the GitHub provider directly:
 
 ```ts
 import { Hono } from "hono"
 import {
-  middleware as github,
+  GitHubProvider,
   type GitHubAuthEnv,
 } from "@xd-dash/auth.net.im/providers/github"
 
 const app = new Hono<GitHubAuthEnv>()
 
-app.use("/protected/*", github.auth())
+app.use("/protected/*", GitHubProvider.middleware())
 app.get("/protected/me", c => c.json(c.get("authIdentity")))
 
 export default app
@@ -72,7 +72,7 @@ const provider = new GitHubProvider()
 const identity = await provider.authenticate({ request, env })
 ```
 
-`GitHubProvider` consumes the provider-neutral `Request + env` contract and does not depend on Hono `Context`. `middleware.auth()` is only a Hono adapter over that primitive.
+`GitHubProvider` consumes the provider-neutral `Request + env` contract. Its `middleware()` static method is a thin Hono adapter over the same provider behavior.
 
 For a Git dependency, a consuming project can pin an exact repository ref:
 
@@ -95,11 +95,11 @@ POST /v1/auth/:provider
 Authorization: Bearer <provider assertion>
 ```
 
-The canonical `auth.net.im` Worker consumes the same provider implementation and middleware composition used by downstream Workers.
+Authentication/error responses are `Cache-Control: no-store`. `401` responses include a Bearer `WWW-Authenticate` challenge.
 
 ## GitHub Actions OIDC
 
-The GitHub provider uses Hono's `hono/jwt` helper for JWT decoding and JWKS verification. Verification is restricted to `RS256`, requires GitHub's issuer and the configured audience, applies Hono's time-claim checks, and then applies local repository/ref/workflow policy.
+The GitHub provider uses Hono's JWT/JWKS verification helpers. Verification is restricted to `RS256`, requires GitHub's issuer and the configured audience, applies Hono's `exp`/`nbf`/`iat` checks, and then applies local repository/ref/workflow policy.
 
 Required Worker vars:
 
@@ -107,9 +107,18 @@ Required Worker vars:
 GITHUB_AUDIENCE=auth.net.im
 GITHUB_OWNER=xd-dash
 GITHUB_REPOSITORIES=xd-dash/huram-abi-master
+```
+
+Optional policy restrictions:
+
+```text
+GITHUB_OWNER_ID=<immutable GitHub owner id>
+GITHUB_REPOSITORY_IDS=<comma-separated immutable repository ids>
 GITHUB_REFS=refs/heads/automation,refs/heads/worktree-automation
 GITHUB_WORKFLOW_PREFIX=xd-dash/huram-abi-master/.github/workflows/
 ```
+
+When stable IDs are configured, both the human-readable owner/repository names and the immutable IDs must match. This protects long-lived policy from repository rename/recreation ambiguity while keeping names available for diagnostics.
 
 GitHub workflow permissions:
 
@@ -136,9 +145,15 @@ curl -fsS \
   https://auth.net.im/v1/auth/github
 ```
 
+## Concurrency and replay model
+
+Providers are stateless after construction. The Hono middleware keeps no request-shared mutable authentication state; normalized identity is stored only on the current Hono context. This avoids isolate-local races between concurrent requests.
+
+GitHub OIDC assertions are bearer credentials and can be replayed until they expire. `auth.net.im` validates assertions; it does not maintain a `jti` replay ledger. A downstream capability-exchange endpoint that requires one-time semantics should add an explicit durable replay store rather than hiding mutable replay state inside the provider.
+
 ## Composition rule
 
-Provider-specific code belongs under `src/providers/<provider>/` and is publicly addressed as `@xd-dash/auth.net.im/providers/<provider>`. A provider exports the shared `AuthProvider` contract and its framework conveniences through that provider surface. Framework adapter files may remain internal implementation details.
+Provider-specific code belongs under `src/providers/<provider>/` and is publicly addressed as `@xd-dash/auth.net.im/providers/<provider>`. Framework adapter files may remain internal implementation details.
 
 ```text
 provider primitive
@@ -163,4 +178,4 @@ npm run check
 npm run dev
 ```
 
-`npm run check` runs TypeScript validation plus Wrangler's deploy dry-run path, matching the local Cloudflare Worker qualification boundary used by Huram.
+`npm run check` runs TypeScript validation plus Wrangler's deploy dry-run path.
