@@ -1,8 +1,8 @@
 # auth.net.im
 
-`auth.net.im` is a lightweight Cloudflare Worker authentication gateway built around composable authentication providers.
+`auth.net.im` is a lightweight Cloudflare Worker authentication gateway built around Hono and composable authentication providers.
 
-The Worker host owns HTTP routing and response normalization. Providers own verification and provider-specific authorization policy. The first provider is GitHub Actions OIDC.
+The Hono host owns HTTP routing and response normalization. Providers own verification and provider-specific authorization policy. The first provider is GitHub Actions OIDC.
 
 ```text
 Huram ABI
@@ -11,8 +11,10 @@ Huram ABI
 Cloudflare Worker
     runtime host
         ↓
-auth.net.im host contract
-    provider-neutral routing
+Hono
+    provider-neutral HTTP routing
+        ↓
+AuthProvider contract
         ↓
 composed auth providers
     github
@@ -34,7 +36,9 @@ The provider-neutral contract is defined in `src/auth/types.ts`. Provider compos
 
 ## GitHub Actions OIDC
 
-The GitHub provider verifies GitHub's RS256-signed OIDC assertion, checks issuer/audience/time validity, verifies the signature against GitHub's JWKS, and then applies local repository/ref/workflow policy from Worker environment variables.
+The GitHub provider uses Hono's `hono/jwt` helper for JWT decoding and JWKS verification. Verification is restricted to `RS256`, requires GitHub's issuer and the configured audience, applies Hono's `exp`/`nbf`/`iat` checks, and then applies local repository/ref/workflow policy.
+
+The provider deliberately uses Hono's JWKS verifier rather than hand-maintaining RSA/JWK verification. The provider contract remains ours; JWT mechanics are delegated to Hono.
 
 Required Worker vars:
 
@@ -93,7 +97,9 @@ Successful responses use the same provider-neutral identity envelope regardless 
 
 ## Composition rule
 
-Provider-specific code belongs under `src/providers/<provider>/`. A provider exports the shared `AuthProvider` contract and is registered in `src/providers/index.ts`. Do not add provider-specific branching to the Worker host.
+Provider-specific code belongs under `src/providers/<provider>/`. A provider exports the shared `AuthProvider` contract and is registered in `src/providers/index.ts`. Do not add provider-specific branching to the Hono host.
+
+Hono is a primitive of the HTTP host, not an auth provider. JWT is a helper used by providers that need JWT semantics. A future provider that does not use JWT should not be forced through JWT middleware.
 
 The same general rule applies when Smoke gains Cloudflare functionality:
 
