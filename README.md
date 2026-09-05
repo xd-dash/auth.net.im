@@ -5,8 +5,7 @@
 The Hono host owns HTTP routing and response normalization. Providers own verification and provider-specific authorization policy. The first provider is GitHub Actions OIDC.
 
 ```text
-Huram ABI
-    exact qualification / deployment authority
+qualification / deployment owner
         ↓
 Cloudflare Worker
     runtime host
@@ -18,9 +17,7 @@ AuthProvider contract
         ↓
 composed auth providers
     github
-    future google
-    future cloudflare-access
-    ...
+    future providers
 ```
 
 ## Reusable package surface
@@ -101,21 +98,35 @@ Authentication/error responses are `Cache-Control: no-store`. `401` responses in
 
 The GitHub provider uses Hono's JWT/JWKS verification helpers. Verification is restricted to `RS256`, requires GitHub's issuer and the configured audience, applies Hono's `exp`/`nbf`/`iat` checks, and then applies local repository/ref/workflow policy.
 
-Required Worker vars:
+The provider reads configuration through `GitHubEnv`; this repository deliberately does not contain deployment policy values. The deployment owner supplies them at runtime.
+
+Required bindings:
 
 ```text
-GITHUB_AUDIENCE=auth.net.im
-GITHUB_OWNER=xd-dash
-GITHUB_REPOSITORIES=xd-dash/huram-abi-master
+GITHUB_AUDIENCE
+GITHUB_OWNER
+GITHUB_REPOSITORIES
 ```
 
 Optional policy restrictions:
 
 ```text
-GITHUB_OWNER_ID=<immutable GitHub owner id>
+GITHUB_OWNER_ID
+GITHUB_REPOSITORY_IDS
+GITHUB_REFS
+GITHUB_WORKFLOW_PREFIX
+```
+
+A synthetic configuration looks like:
+
+```text
+GITHUB_AUDIENCE=https://service.example
+GITHUB_OWNER=example-org
+GITHUB_REPOSITORIES=example-org/example-repo
+GITHUB_OWNER_ID=<immutable owner id>
 GITHUB_REPOSITORY_IDS=<comma-separated immutable repository ids>
-GITHUB_REFS=refs/heads/automation,refs/heads/worktree-automation
-GITHUB_WORKFLOW_PREFIX=xd-dash/huram-abi-master/.github/workflows/
+GITHUB_REFS=refs/heads/main,refs/heads/release
+GITHUB_WORKFLOW_PREFIX=example-org/example-repo/.github/workflows/
 ```
 
 When stable IDs are configured, both the human-readable owner/repository names and the immutable IDs must match. This protects long-lived policy from repository rename/recreation ambiguity while keeping names available for diagnostics.
@@ -128,13 +139,13 @@ permissions:
   id-token: write
 ```
 
-Request a token for the configured audience and call the provider:
+A workload can request a token for its deployment-configured audience and send it to the configured authentication endpoint:
 
 ```sh
 response="$(
   curl -fsS \
     -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-    "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=auth.net.im"
+    "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${GITHUB_AUDIENCE}"
 )"
 
 jwt="$(jq -r .value <<<"$response")"
@@ -142,8 +153,14 @@ jwt="$(jq -r .value <<<"$response")"
 curl -fsS \
   -X POST \
   -H "Authorization: Bearer $jwt" \
-  https://auth.net.im/v1/auth/github
+  "${AUTH_ENDPOINT}/v1/auth/github"
 ```
+
+## Policy ownership
+
+Reusable provider code defines the shape and semantics of policy; deployment infrastructure owns concrete policy values. Do not put a particular organization, repository, ref, workflow path, immutable ID, or audience into `wrangler.jsonc`, provider source, or package tests.
+
+A deployment/qualification system should inject the exact bindings when starting or deploying the Worker and should own live issuer verification for its real workload identity. Package tests remain synthetic and deterministic.
 
 ## Concurrency and replay model
 
@@ -167,15 +184,15 @@ application composition
 
 Do not make downstream consumers understand internal framework-adapter directory layout merely to compose one provider.
 
-Cloudflare is the runtime/deployment provider here, not the authentication authority. Hono is the HTTP primitive. GitHub is the identity provider. Huram remains exact qualification and infrastructure authority.
+Cloudflare is the runtime/deployment provider here, not the authentication authority. Hono is the HTTP primitive. GitHub is the identity provider. Concrete deployment policy belongs outside this package.
 
 ## Local qualification
 
 ```sh
-npm install
+npm ci
 npm test
 npm run check
 npm run dev
 ```
 
-`npm run check` runs TypeScript validation plus Wrangler's deploy dry-run path.
+`npm run check` runs TypeScript validation plus Wrangler's deploy dry-run path. Live OIDC qualification belongs to the deployment owner, where real environment policy and a real issuer token can be composed with an exact package revision.
