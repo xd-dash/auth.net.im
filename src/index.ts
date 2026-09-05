@@ -1,3 +1,5 @@
+import { Hono } from "hono"
+
 import { AuthError } from "./auth/error"
 import type { AuthFailure, AuthSuccess } from "./auth/types"
 import { getProvider, providerNames } from "./providers"
@@ -5,7 +7,11 @@ import type { GitHubEnv } from "./providers/github"
 
 export type Env = GitHubEnv
 
-function json(body: unknown, status = 200): Response {
+type AppEnv = {
+  Bindings: Env
+}
+
+function response(body: unknown, status = 200): Response {
   return Response.json(body, {
     status,
     headers: {
@@ -14,54 +20,47 @@ function json(body: unknown, status = 200): Response {
   })
 }
 
-async function authenticate(request: Request, env: Env, providerName: string): Promise<Response> {
-  const provider = getProvider(providerName)
+const app = new Hono<AppEnv>()
+
+app.get("/healthz", c => c.json({ ok: true }))
+
+app.get("/v1/providers", c => c.json({ providers: providerNames() }))
+
+app.post("/v1/auth/:provider", async c => {
+  const provider = getProvider(c.req.param("provider"))
   if (!provider) {
     const body: AuthFailure = {
       authenticated: false,
       error: { code: "unknown_provider", message: "authentication provider is not available" },
     }
-    return json(body, 404)
+    return response(body, 404)
   }
 
   try {
-    const identity = await provider.authenticate({ request, env })
+    const identity = await provider.authenticate({
+      request: c.req.raw,
+      env: c.env,
+    })
     const body: AuthSuccess = { authenticated: true, identity }
-    return json(body)
+    return response(body)
   } catch (error) {
     if (error instanceof AuthError) {
       const body: AuthFailure = {
         authenticated: false,
         error: { code: error.code, message: error.message },
       }
-      return json(body, error.status)
+      return response(body, error.status)
     }
+
     console.error("auth provider failure", error)
     const body: AuthFailure = {
       authenticated: false,
       error: { code: "provider_failure", message: "authentication provider failed" },
     }
-    return json(body, 500)
+    return response(body, 500)
   }
-}
+})
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url)
+app.notFound(() => response({ error: "not_found" }, 404))
 
-    if (request.method === "GET" && url.pathname === "/healthz") {
-      return json({ ok: true })
-    }
-
-    if (request.method === "GET" && url.pathname === "/v1/providers") {
-      return json({ providers: providerNames() })
-    }
-
-    const match = /^\/v1\/auth\/([a-z0-9_-]+)$/.exec(url.pathname)
-    if (request.method === "POST" && match) {
-      return authenticate(request, env, match[1])
-    }
-
-    return json({ error: "not_found" }, 404)
-  },
-}
+export default app
